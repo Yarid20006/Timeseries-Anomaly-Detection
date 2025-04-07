@@ -1,27 +1,38 @@
-# streamlit_app.py
+
 import streamlit as st
 import pandas as pd
+from anomaly_detection import detect_anomalies
 
-# Title
-st.title("📈 Time Series Anomaly Detection")
+st.set_page_config(page_title="Time Series Anomaly Detection", layout="wide")
 
-# Upload CSV file
-uploaded_file = st.file_uploader("Upload your time series CSV file", type=["csv"])
+st.title("Time Series Anomaly Detection")
+st.caption("Upload your time series CSV file")
+
+uploaded_file = st.file_uploader("Drag and drop file here", type=["csv"])
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
-    st.write("✅ File uploaded successfully:")
+
+    st.success("File uploaded successfully:")
     st.dataframe(df.head())
 
-    # Button to trigger detection
     if st.button("Run Anomaly Detection"):
         with st.spinner("Running anomaly detection..."):
-            # 🔮 Dummy output for now
-            results = [
-                {"timestamp": "2025-04-01 10:00", "type": "Contextual", "confidence": 0.89},
-                {"timestamp": "2025-04-02 14:30", "type": "Collective", "confidence": 0.93},
-            ]
-            st.success("Anomaly detection completed!")
-            st.write("📊 **Detected Anomalies:**")
-            for res in results:
-                st.write(f"• ⏰ `{res['timestamp']}` — 🧠 {res['type']} anomaly with **{res['confidence']*100:.1f}%** confidence")
+            anomalies = detect_anomalies(
+                df,
+                time_col="Start Time",
+                value_col="Trip Distance"
+            )
+
+        st.success("Anomaly detection completed!")
+        st.subheader("Detected Anomalies:")
+
+        if not anomalies:
+            st.info("No anomalies detected.")
+        else:
+            for a in anomalies:
+                st.markdown(
+                    f"<span style='color:#facc15'> {a['timestamp'].strftime('%Y-%m-%d %H:%M')}</span> — "
+                    f"<b>{a['type']}</b> anomaly with <b>{a['confidence']*100:.1f}%</b> confidence",
+                    unsafe_allow_html=True
+                )
