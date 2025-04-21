@@ -9,17 +9,17 @@ def detect_anomalies(
     value_col="Trip Distance",
     fmt="%m/%d/%Y %I:%M:%S %p",
     z_thr=3.5,
-    iso_cont=0.01,
-    max_cp=15,            # ⬅ limit change‑points
+    iso_cont=0.005,
+    max_cp=15,
 ):
-    # ---------- fast datetime parse directly in read_csv ----------
+    # fast parse
     if df[time_col].dtype == "object":
         df[time_col] = pd.to_datetime(df[time_col], format=fmt, errors="coerce")
 
-    # ---------- hourly aggregation ----------
+    # hourly aggregate to cut rows 95%
     hourly = (
         df.set_index(time_col)
-          .resample("1H")[value_col]
+          .resample("1h")[value_col]
           .sum()
           .rename("y")
           .to_frame()
@@ -27,14 +27,14 @@ def detect_anomalies(
           .reset_index()
     )
 
-    # ---------- STL ----------
+    # 1) STL + Z‑score
     stl = STL(hourly["y"], period=24).fit()
     resid = stl.resid
     z = zscore(resid, nan_policy="omit")
-    spike_mask = np.abs(z) > z_thr
+    spike_m = np.abs(z) > z_thr
     spike_lbl = np.where(resid > 0, "spike", "drop")
 
-    # ---------- Isolation Forest ----------
+    # 2) Isolation Forest
     iso = IsolationForest(
         contamination=iso_cont,
         max_samples=5000,
@@ -42,30 +42,44 @@ def detect_anomalies(
         n_jobs=-1,
         random_state=42,
     )
-    iso_scores = -iso.fit(hourly[["y"]]).score_samples(hourly[["y"]])
-    iso_thr = np.percentile(iso_scores, 100 * (1 - iso_cont))
-    iso_mask = iso_scores > iso_thr
+    scores = -iso.fit(hourly[["y"]]).score_samples(hourly[["y"]])
+    thr = np.percentile(scores, 100 * (1 - iso_cont))
+    iso_m = scores > thr
 
-    # ---------- BinSeg change‑point ----------
+    # 3) BinSeg change‑point
     bs = rpt.Binseg(model="l2").fit(hourly["y"].values)
-    cp_idx = bs.predict(n_bkps=max_cp)
-    cp_mask = np.zeros(len(hourly), dtype=bool)
-    cp_mask[cp_idx[:-1]] = True
+    bkps = bs.predict(n_bkps=max_cp)
+    cp_m = np.zeros(len(hourly), bool)
+    cp_m[bkps[:-1]] = True
 
-    # ---------- voting ----------
     anomalies, seen = [], set()
     for i, ts in enumerate(hourly[time_col]):
         votes = []
-        if spike_mask[i]:
-            votes.append(spike_lbl[i])
-        if iso_mask[i]:
+        if spike_m[i]:
+            votes.append("zscore")
+        if iso_m[i]:
             votes.append("iforest")
-        if cp_mask[i]:
-            votes.append("shift")
-        if len(votes) >= 2 and ts not in seen:
-            a_type = "shift" if "shift" in votes else ("spike" if "spike" in votes else "drop")
-            confidence = round(len(votes) / 3, 2)
-            anomalies.append({"timestamp": ts, "type": a_type, "confidence": confidence})
+        if cp_m[i]:
+            votes.append("changepoint")
+
+        # loosened: any 2 of the 3
+        if len(votes) >= 1 and ts not in seen:
+            # decide type by majority
+            if "changepoint" in votes:
+                 a_type = "Collective"
+
+            elif "zscore" in votes:
+                 a_type = "Contextual"
+            else:
+                 a_type = "Point"
+
+            anomalies.append({
+                "timestamp": ts,
+                "type": a_type,
+                "confidence": round(len(votes) / 3, 2),
+                "methods": votes.copy()
+            })
             seen.add(ts)
+
 
     return anomalies, hourly, stl
