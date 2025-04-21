@@ -37,3 +37,4 @@ st.pyplot(fig)
 if st.button("Back"):
     st.switch_page("home")
 
+
