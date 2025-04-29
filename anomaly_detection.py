@@ -3,7 +3,7 @@ from statsmodels.tsa.seasonal import STL
 from scipy.stats import zscore
 from sklearn.ensemble import IsolationForest
 
-def anomaly_detection(
+def detect_anomalies(
     df,
     time_col="Start Time",
     value_col="Trip Distance",

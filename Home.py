@@ -6,7 +6,7 @@ from anomaly_detection import detect_anomalies
 
 
 
-st.home_page_settings(page_title="Time Series Anomaly Detection", layout="wide")
+st.set_page_config(page_title="Time Series Anomaly Detection", layout="wide")
 st.markdown("""
   <style>
     #MainMenu, footer, [data-testid="stSidebar"] {visibility:hidden;}
